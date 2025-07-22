@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    hearts_of_mapping_iv_lib::run()
+    hom4_lib::run()
 }
