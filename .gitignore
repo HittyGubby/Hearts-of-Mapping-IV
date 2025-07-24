@@ -1,2 +1,4 @@
 src-tauri/
 node_modules/
+staged/
+IFLOW.md

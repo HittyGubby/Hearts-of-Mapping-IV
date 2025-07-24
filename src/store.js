@@ -11,6 +11,7 @@ export const store = reactive({
   mode: "paint", // 'paint', 'erase', 'select'
   showCountrySidebar: false,
   showSettingsModal: false,
+  showDebugInfo: true,
 
   // Map Data
   countries: {
@@ -18,7 +19,7 @@ export const store = reactive({
       name: "Germany",
       color: "#555555",
       flag: "flags/GER.png",
-      provinces: ["Tombouctou"],
+      provinces: [],
     },
     POL: {
       name: "Poland",
@@ -38,8 +39,9 @@ export const store = reactive({
   },
 
   // Selection State
-  selectedCountryId: "GER",
+  selectedCountryId: undefined,
   highlightedProvinces: new Set(),
+  clickedProvinceId: undefined,
 
   // --- ACTIONS ---
 
@@ -52,8 +54,30 @@ export const store = reactive({
     this.mode = "paint"; // Default to paint mode on new selection
   },
 
+  getProvinceOwner(provId) {
+    for (const [cid, c] of Object.entries(this.countries)) {
+      if (c.provinces.includes(provId)) return cid;
+    }
+    return null;
+  },
+
+  setHighlightByCountry(cid) {
+    this.highlightedProvinces.clear();
+    if (!cid) return;
+    for (const prov of this.countries[cid]?.provinces || []) {
+      this.highlightedProvinces.add(prov);
+    }
+    for (const [otherId, country] of Object.entries(this.countries)) {
+      if (otherId !== cid && this.factionsAreAllied(cid, otherId)) {
+        for (const prov of country.provinces) {
+          this.highlightedProvinces.add(prov); // green
+        }
+      }
+    }
+  },
+
   assignProvince(provinceId, countryId) {
-    // Remove from old owner, if any
+    //remove from old owner
     for (const id in this.countries) {
       const country = this.countries[id];
       const index = country.provinces.indexOf(provinceId);
@@ -62,8 +86,9 @@ export const store = reactive({
         break;
       }
     }
-    // Assign to new owner
+    //assign to new owner
     if (countryId && this.countries[countryId]) {
+      console.log(provinceId, countryId);
       this.countries[countryId].provinces.push(provinceId);
       this.highlightedProvinces.add(provinceId);
     }

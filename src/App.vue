@@ -13,6 +13,8 @@
 import { store } from './store';
 import StarterScreen from './views/StarterScreen.vue';
 import MainView from './views/MainView.vue';
+window.addEventListener('contextmenu', e => e.preventDefault());
+
 </script>
 
 <style>

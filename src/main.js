@@ -15,7 +15,7 @@ const vuetify = createVuetify({
     themes: {
       dark: {
         colors: {
-          primary: "#1976D2",
+          primary: "#FFA500",
           secondary: "#424242",
           accent: "#82B1FF",
           error: "#FF5252",
@@ -24,6 +24,7 @@ const vuetify = createVuetify({
           warning: "#FFC107",
           background: "#121212",
           surface: "#1E1E1E",
+          blue: "#219693",
           "surface-variant": "#2D2D2D",
         },
       },

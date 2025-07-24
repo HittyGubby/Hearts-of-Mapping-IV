@@ -1,54 +1,28 @@
 <template>
-    <v-navigation-drawer
-        v-model="isOpen"
-        location="left"
-        width="320"
-        temporary
-        class="country-sidebar"
-        elevation="16"
-    >
-        <v-toolbar
-            color="primary"
-            dark
-            flat
-        >
+    <v-navigation-drawer v-model="isOpen" location="left" width="320" temporary class="country-sidebar" elevation="16">
+        <v-toolbar color="primary" dark flat>
             <v-toolbar-title class="text-h6 font-weight-bold">
                 Countries
             </v-toolbar-title>
             <v-spacer />
-            <v-btn
-                icon="mdi-close"
-                variant="text"
-                @click="store.showCountrySidebar = false"
-            />
+            <v-btn icon="mdi-close" variant="text" @click="store.showCountrySidebar = false" />
         </v-toolbar>
 
         <v-list class="pa-0">
-            <v-list-item
-                v-for="(country, id) in store.countries"
-                :key="id"
-                @click="store.selectCountry(id)"
-                :active="store.selectedCountryId === id"
-                class="country-item"
-                :class="{ 'selected-country': store.selectedCountryId === id }"
-            >
+            <v-list-item v-for="(country, id) in store.countries" :key="id" @click="store.selectCountry(id)"
+                :active="store.selectedCountryId === id" class="country-item"
+                :class="{ 'selected-country': store.selectedCountryId === id }">
                 <template v-slot:prepend>
                     <div class="flag-container mr-3">
-                        <v-img
-                            :src="country.flag"
-                            :alt="country.name"
-                            width="48"
-                            height="32"
-                            cover
-                            class="flag-image"
-                        />
+                        <v-img :src="country.flag" :alt="country.name" width="48" height="32" cover
+                            class="flag-image" />
                     </div>
                 </template>
 
                 <v-list-item-title class="font-weight-medium">
                     {{ country.name }}
                 </v-list-item-title>
-                
+
                 <v-list-item-subtitle class="text-caption">
                     ID: {{ id }} | Provinces: {{ country.provinces.length }}
                 </v-list-item-subtitle>
@@ -56,13 +30,7 @@
                 <template v-slot:append>
                     <v-menu>
                         <template v-slot:activator="{ props }">
-                            <v-btn
-                                icon="mdi-dots-vertical"
-                                variant="text"
-                                size="small"
-                                v-bind="props"
-                                @click.stop
-                            />
+                            <v-btn icon="mdi-dots-vertical" variant="text" size="small" v-bind="props" @click.stop />
                         </template>
                         <v-list>
                             <v-list-item @click="editCountry(id)">
@@ -86,34 +54,12 @@
         <template v-slot:append>
             <div class="pa-4">
                 <v-divider class="mb-3" />
-                
+
                 <!-- Add Country Button -->
-                <v-btn
-                    block
-                    color="success"
-                    variant="elevated"
-                    @click="showAddCountryDialog = true"
-                    class="mb-3"
-                >
+                <v-btn block color="success" variant="elevated" @click="showAddCountryDialog = true" class="mb-3">
                     <v-icon start>mdi-plus</v-icon>
                     Add Country
                 </v-btn>
-
-                <v-card
-                    color="info"
-                    variant="tonal"
-                    class="pa-3"
-                >
-                    <div class="d-flex align-center">
-                        <v-icon start color="info">mdi-information</v-icon>
-                        <div>
-                            <div class="text-subtitle-2 font-weight-medium">Keyboard Shortcuts</div>
-                            <div class="text-caption">
-                                F1: Paint | F2: Erase | F3: Select
-                            </div>
-                        </div>
-                    </div>
-                </v-card>
             </div>
         </template>
     </v-navigation-drawer>
@@ -121,67 +67,34 @@
     <!-- Add/Edit Country Dialog -->
     <v-dialog v-model="showAddCountryDialog" max-width="500">
         <v-card>
-            <v-toolbar
-                color="primary"
-                dark
-                flat
-            >
+            <v-toolbar color="primary" dark flat>
                 <v-toolbar-title>
                     {{ editingCountry ? 'Edit Country' : 'Add Country' }}
                 </v-toolbar-title>
                 <v-spacer />
-                <v-btn
-                    icon="mdi-close"
-                    variant="text"
-                    @click="showAddCountryDialog = false"
-                />
+                <v-btn icon="mdi-close" variant="text" @click="showAddCountryDialog = false" />
             </v-toolbar>
 
             <v-card-text class="pa-6">
                 <v-form ref="form">
-                    <v-text-field
-                        v-model="countryForm.id"
-                        label="Country ID"
-                        required
-                        :rules="[v => !!v || 'Country ID is required']"
-                        :disabled="editingCountry"
-                    />
-                    
-                    <v-text-field
-                        v-model="countryForm.name"
-                        label="Country Name"
-                        required
-                        :rules="[v => !!v || 'Country name is required']"
-                    />
-                    
-                    <v-text-field
-                        v-model="countryForm.flag"
-                        label="Flag URL"
-                        required
-                        :rules="[v => !!v || 'Flag URL is required']"
-                    />
-                    
-                    <v-color-picker
-                        v-model="countryForm.color"
-                        label="Country Color"
-                        hide-inputs
-                        class="mt-4"
-                    />
+                    <v-text-field v-model="countryForm.id" label="Country ID" required
+                        :rules="[v => !!v || 'Country ID is required']" :disabled="editingCountry" />
+
+                    <v-text-field v-model="countryForm.name" label="Country Name" required
+                        :rules="[v => !!v || 'Country name is required']" />
+
+                    <v-text-field v-model="countryForm.flag" label="Flag URL (Optional, Online or local)" />
+
+                    <v-color-picker v-model="countryForm.color" label="Country Color" hide-inputs class="mt-4" />
                 </v-form>
             </v-card-text>
 
             <v-card-actions class="pa-6">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    @click="showAddCountryDialog = false"
-                >
+                <v-btn variant="text" @click="showAddCountryDialog = false">
                     Cancel
                 </v-btn>
-                <v-btn
-                    color="primary"
-                    @click="saveCountry"
-                >
+                <v-btn color="primary" @click="saveCountry">
                     {{ editingCountry ? 'Update' : 'Add' }}
                 </v-btn>
             </v-card-actions>
@@ -233,7 +146,7 @@ function deleteCountry(id) {
 
 async function saveCountry() {
     if (!form.value.validate()) return;
-    
+
     if (editingCountry.value) {
         // Update existing country
         store.countries[countryForm.id] = {
@@ -251,7 +164,7 @@ async function saveCountry() {
             provinces: []
         };
     }
-    
+    store.selectedCountryId = countryForm.id;
     showAddCountryDialog.value = false;
     editingCountry.value = null;
     resetForm();

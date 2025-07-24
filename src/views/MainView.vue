@@ -1,23 +1,29 @@
 <template>
-    <div class="relative w-screen h-screen overflow-hidden">
+    <div class="absolute w-screen h-screen">
         <div class="absolute inset-0 z-0 w-screen h-screen">
             <MapView />
         </div>
 
-        <div class="absolute top-4 left-4 z-10">
+        <div style="position: absolute; top: 0; left: 0; z-index: 10;">
             <TopLeftUI />
         </div>
 
-        <div class="absolute bottom-4 left-4 z-10">
+        <div style="position: absolute; bottom: 0; left: 0; z-index: 10;">
             <BottomLeftUI />
         </div>
 
-        <div class="absolute bottom-4 right-4 z-10">
+        <div style="position: absolute; bottom: 0; right: 0; z-index: 10;">
             <BottomRightUI />
         </div>
 
+        <div style="position: absolute; top: 0; right: 0; z-index: 10;">
+            <TopRightUI />
+        </div>
+
         <transition name="slide-fade">
-            <CountrySidebar v-if="store.showCountrySidebar" />
+            <div>
+                <CountrySidebar v-if="store.showCountrySidebar" />
+            </div>
         </transition>
 
         <transition name="fade">
@@ -33,19 +39,24 @@ import MapView from '../components/MapView.vue';
 import TopLeftUI from '../components/TopLeftUI.vue';
 import BottomLeftUI from '../components/BottomLeftUI.vue';
 import BottomRightUI from '../components/BottomRightUI.vue';
+import TopRightUI from '../components/TopRightUI.vue';
 import CountrySidebar from '../components/CountrySidebar.vue';
-import SettingsModal from '../components/SettingsModal.vue';
+import SettingsModal from '../components/PauseMenu.vue';
 
 const handleKeyDown = (e) => {
-    if (e.key === 'F1') {
+    if (store.currentScreen == 'main' && !store.showCountrySidebar && !store.showSettingsModal) {
         e.preventDefault();
-        store.setMode('paint');
-    } else if (e.key === 'F2') {
-        e.preventDefault();
-        store.setMode('erase');
-    } else if (e.key === 'F3') {
-        e.preventDefault();
-        store.setMode('select');
+        if (e.key === 'F1') {
+            store.setMode('paint');
+        } else if (e.key === 'F2') {
+            store.setMode('erase');
+        } else if (e.key === 'F3') {
+            store.setMode('select');
+        } else if (e.key === 'Escape') {
+            store.showSettingsModal = !store.showSettingsModal;
+        } else if (e.key === '`') {
+            store.showDebugInfo = !store.showDebugInfo;
+        }
     }
 };
 
@@ -61,26 +72,26 @@ onUnmounted(() => {
 <style scoped>
 .slide-fade-enter-active,
 .slide-fade-leave-active {
-  transition: all 0.3s ease;
+    transition: all 0.3s ease;
 }
 
 .slide-fade-enter-from {
-  transform: translateX(-100%);
-  opacity: 0;
+    transform: translateX(-100%);
+    opacity: 0;
 }
 
 .slide-fade-leave-to {
-  transform: translateX(-100%);
-  opacity: 0;
+    transform: translateX(-100%);
+    opacity: 0;
 }
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease;
 }
 
 .fade-enter-from,
 .fade-leave-to {
-  opacity: 0;
+    opacity: 0;
 }
 </style>
