@@ -1,39 +1,40 @@
 <template>
-    <div class="map-container" ref="containerRef" @mousemove="updateCursor">
-        <svg ref="svgRef" class="map-svg" id="map-svg" @wheel.prevent="handleWheel" @mousedown="handleMouseDown"
-            @mousemove="updateCursor" @mouseup="handleMouseUp" @mouseenter="isCursorInScreen = true"
-            @mouseleave="isCursorInScreen = false" @click="handleClick" @contextmenu.prevent="handleClick">
-            <g :transform="transformMatrix">
-                <g v-for="(tile, idx) in visibleTiles" :key="idx" :transform="tile.transform">
-                    <g ref="mapContentRef" v-html="mapSVG" />
-                </g>
-                <rect v-if="dragRect" :x="dragRect.x" :y="dragRect.y" :width="dragRect.w" :height="dragRect.h" :style="{
-                    fill: 'rgba(0, 0, 0, 0)',
-                    stroke: '#ffffff',
-                    strokeWidth: 0.8 * camera.z / zMax,
-                    pointerEvents: 'none'
-                }" class="selection-rect" />
-            </g>
-        </svg>
-        <div class="debug-overlay" v-if="store.showDebugInfo">
-            <div>CamPos: ({{ camera.x.toFixed(2) }}, {{ camera.y.toFixed(2) }}, {{ camera.z.toFixed(2) }})</div>
-            <div>Velocity: ({{ velocity.x.toFixed(2) }}, {{ velocity.y.toFixed(2) }}, {{ velocity.z.toFixed(2) }})</div>
-            <div>CursorPos(Map): ({{ cursorMap.x.toFixed(2) }}, {{ cursorMap.y.toFixed(2) }})</div>
-            <div>CursorPos(Screen): ({{ cursorScreenPos.x }}, {{ cursorScreenPos.y }})</div>
-            <div>YCoordRange: [{{ yRange.min.toFixed(2) }}, {{ yRange.max.toFixed(2) }}]</div>
-            <div>Zoom: {{ camera.z.toFixed(2) }}/{{ zMax.toFixed(2) }}</div>
-            <div>Mode: {{ store.mode }}</div>
-            <div>Selected Country: {{ store.selectedCountryId || 'None' }}</div>
-            <div>Highlighted Provinces: {{ Array.from(store.highlightedProvinces).join(', ') || 'None' }}</div>
-            <div>Clicked Province: {{ store.clickedProvinceId || 'None' }}</div>
-        </div>
+    <DebugOverlay v-if="store.showDebugInfo" :camera="camera" :velocity="velocity" :cursor-map="cursorMap"
+        :cursor-screen-pos="cursorScreenPos" :y-range="yRange" :z-max="zMax" :original-palette="originalPalette"
+        :current-palette="currentPalette" ref="debugOverlayRef" />
+    <div class="map-container" ref="containerRef" @mousemove="updateCursor" @wheel.prevent="handleWheel"
+        @mousedown="handleMouseDown" @mouseup="handleMouseUp" @mouseenter="isCursorInScreen = true"
+        @mouseleave="isCursorInScreen = false" @click="handleClick" @contextmenu.prevent="handleClick">
+        <canvas ref="canvasRef" class="map-canvas"></canvas>
+
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, reactive, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, watch, reactive, computed } from 'vue';
 import { store } from '../store.js';
+import { initRenderer } from '../webgl/renderer.js';
+import DebugOverlay from './DebugOverlay.vue';
 
+// --- Constants ---
+const MAP_WIDTH = 5632;
+const MAP_HEIGHT = 2048;
+
+// --- Core State ---
+let renderer = null;
+let animationFrame = null;
+let isCursorInScreen = true;
+let arrowKeys = { left: false, right: false, up: false, down: false, pageUp: false, pageDown: false };
+
+// --- Refs ---
+const containerRef = ref(null);
+const canvasRef = ref(null);
+const debugOverlayRef = ref(null);
+const originalPalette = ref(null);
+const currentPalette = ref(null);
+const provinceDefinitions = ref([]);
+
+// --- Camera & Controls ---
 const panSensitivityKeyboard = 0.005;
 const panSensitivityMouse = 0.005;
 const zoomSensitivityKeyboard = 0.005;
@@ -41,68 +42,25 @@ const zoomSensitivityMouse = 0.02;
 const edgePanWidthRatio = 0.05;
 const zMin = 2.0;
 const lerpAcceleration = 0.9;
-const mapHeight = 509.39001;
-const mapWidth = 1400.16;
 
 const camera = reactive({ x: 0, y: 0, z: 50 });
 const velocity = reactive({ x: 0, y: 0, z: 0 });
 const cursorScreenPos = reactive({ x: 0, y: 0 });
-
-const svgRef = ref(null);
-const mapContentRef = ref(null);
-const mapSVG = ref('');
-const containerRef = ref(null);
 const cursorMap = reactive({ x: 0, y: 0 });
 
-const dragStart = ref(null);
-const dragEnd = ref(null);
-const dragRect = computed(() => {
-    if (!dragStart.value || !dragEnd.value) return null;
-    const x1 = Math.min(dragStart.value.x, dragEnd.value.x);
-    const y1 = Math.min(dragStart.value.y, dragEnd.value.y);
-    const x2 = Math.max(dragStart.value.x, dragEnd.value.x);
-    const y2 = Math.max(dragStart.value.y, dragEnd.value.y);
-    return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
-});
 
-
-let animationFrame = null;
-let isCursorInScreen = true;
-let arrowKeys = { left: false, right: false, up: false, down: false, pageUp: false, pageDown: false };
-
+// --- Computed Properties for Camera ---
 const fov = 90;
 const fovRad = computed(() => (fov * Math.PI) / 180);
-const zMax = computed(() => mapHeight / 2.0 / Math.tan(fovRad.value / 2.0));
+const zMax = computed(() => MAP_HEIGHT / 2.0 / Math.tan(fovRad.value / 2.0));
 
 const yRange = computed(() => {
     const ymin = camera.z * Math.tan(fovRad.value / 2.0);
-    const ymax = mapHeight - camera.z * Math.tan(fovRad.value / 2.0);
+    const ymax = MAP_HEIGHT - camera.z * Math.tan(fovRad.value / 2.0);
     return { min: ymin, max: ymax };
 });
 
-//3d coords to 2d matrix
-const transformMatrix = computed(() => {
-    const container = containerRef.value;
-    if (!container) return '';
-    const screenW = container.clientWidth;
-    const screenH = container.clientHeight;
-    const scale = screenH / mapHeight * (zMax.value / camera.z);
-    const tx = screenW / 2 - camera.x * scale;
-    const ty = screenH / 2 - camera.y * scale;
-    return `translate(${tx},${ty}) scale(${scale},${scale})`;
-});
-
-const visibleTiles = computed(() => {
-    const tiles = [];
-    tiles.push({ transform: `translate(${(Math.floor(camera.x / mapWidth) - 0.5) * mapWidth}, 0)` });
-    tiles.push({ transform: `translate(${(Math.floor(camera.x / mapWidth) + 0.5) * mapWidth}, 0)` });
-    return tiles;
-});
-
-function getProvinceElements() {
-    if (!svgRef.value) return [];
-    return svgRef.value.querySelectorAll('#provinces path');
-}
+// --- Event Handlers ---
 
 function updateCursor(event) {
     const container = containerRef.value;
@@ -114,7 +72,7 @@ function updateCursor(event) {
     cursorScreenPos.y = mouseY;
     const view = { x: container.clientWidth, y: container.clientHeight };
     const ndcX = (mouseX / view.x - 0.5) * 2;//ray
-    const ndcY = (mouseY / view.y - 0.5) * 2;
+    const ndcY = -(mouseY / view.y - 0.5) * 2;//ray
     const rayOrigin = { x: camera.x, y: camera.y, z: camera.z };
     const tanHalfFov = Math.tan(fovRad.value / 2.0);
     const aspectRatio = view.x / view.y;
@@ -127,79 +85,40 @@ function updateCursor(event) {
     const t = -rayOrigin.z / rayDir.z;
     cursorMap.x = rayOrigin.x + rayDir.x * t;
     cursorMap.y = rayOrigin.y + rayDir.y * t;
-    if (dragStart.value) {
-        dragEnd.value = { ...cursorMap };
-    }
 }
 
-
-function handleMouseDown(event) {
-    dragStart.value = { ...cursorMap };
-    dragEnd.value = null;
-}
-
-function handleMouseUp(event) {
-    const rect = dragRect.value;
-    dragStart.value = null;
-    dragEnd.value = null;
-
-    const selectedProvIds = Array.from(getProvinceElements())
-        .filter(p => {
-            const bbox = p.getBBox();
-            const cx = bbox.x + bbox.width / 2;
-            const cy = bbox.y + bbox.height / 2;
-            return (
-                cx >= rect.x &&
-                cx <= rect.x + rect.w &&
-                cy >= rect.y &&
-                cy <= rect.y + rect.h
-            );
-        })
-        .map(p => p.id);
-
-    const isRightClick = event.button === 2;
-    const paintMode = store.mode === 'paint' || store.mode === 'erase';
-    const effectiveLeft = (store.mode === 'erase' ? isRightClick : !isRightClick);
-    if (paintMode) {
-        for (const id of selectedProvIds) {
-            const target = effectiveLeft ? store.selectedCountryId : null;
-            store.assignProvince(id, target);
-        }
-    }
-}
-
+function handleMouseDown(event) { /* Drag-to-select disabled */ }
+function handleMouseUp(event) { /* Drag-to-select disabled */ }
 
 function handleClick(event) {
-    const target = event.target;
-    if (target.tagName === 'path') {
-        store.clickedProvinceId = target.id;
-        handleProvinceClick(target.id, event.button);
+    const province = renderer.getProvinceAt(cursorMap.x, cursorMap.y);
+    const provId = province.id;
+    const provType = province.type; // 'land', 'sea', 'lake', or undefined
+    const provColor = province.color;
+    if (provId > 0) {
+        store.clickedProvinceId = provId;
+        store.clickedProvinceColor = provColor;
+        store.clickedProvinceType = provType;
+        handleProvinceClick(provId, provType, event.button);
     } else {
-        store.clearHighlight();
+        store.clickedProvinceId = null;
+        store.clickedProvinceColor = null;
+        store.clickedProvinceType = null;
     }
 }
 
-function handleProvinceClick(provId, button) {
+function handleProvinceClick(provId, provType, button) {
     const isLeftClick = button === 0;
     const isRightClick = button === 2;
+    if (provType == 'sea') return; // Ignore sea provinces
     if (store.mode === 'paint') {
-        if (isLeftClick && store.selectedCountryId) {
-            store.assignProvince(provId, store.selectedCountryId);
-        } else if (isRightClick) {
-            store.assignProvince(provId, null);
-        }
+        if (isLeftClick && store.selectedCountryId) store.assignProvince(provId, store.selectedCountryId);
+        else if (isRightClick) store.assignProvince(provId, null);
     } else if (store.mode === 'erase') {
-        if (isLeftClick) {
-            store.assignProvince(provId, null);
-        } else if (isRightClick && store.selectedCountryId) {
-            store.assignProvince(provId, store.selectedCountryId);
-        }
+        if (isLeftClick) store.assignProvince(provId, null);
+        else if (isRightClick && store.selectedCountryId) store.assignProvince(provId, store.selectedCountryId);
     } else if (store.mode === 'select') {
-        if (isLeftClick) {
-            store.selectedCountryId = store.getProvinceOwner(provId);
-        } else if (isRightClick) {
-            store.setHighlightByCountry(store.getProvinceOwner(provId));
-        }
+        if (isLeftClick) store.selectedCountryId = store.getProvinceOwner(provId);
     }
 }
 
@@ -212,7 +131,7 @@ function handleWheel(event) {
     const mouseY = event.clientY - rect.top;
     const view = { x: container.clientWidth, y: container.clientHeight };
     const ndcX = (mouseX / view.x - 0.5) * 2;
-    const ndcY = (mouseY / view.y - 0.5) * 2;
+    const ndcY = -(mouseY / view.y - 0.5) * 2;
     const tanHalfFov = Math.tan(fovRad.value / 2.0);
     const aspectRatio = view.x / view.y;
     const rayOrigin = { x: camera.x, y: camera.y, z: camera.z };
@@ -263,97 +182,78 @@ function handleKeyUp(e) {
     if (e.key === 'PageDown') arrowKeys.pageDown = false;
 }
 
+// --- Animation Loop ---
+
 function startAnimationLoop() {
     function animate() {
-        const container = containerRef.value;
-        if (!container) {
+        if (!renderer || !containerRef.value) {
             animationFrame = requestAnimationFrame(animate);
             return;
         }
-        const view = { x: container.clientWidth, y: container.clientHeight };
+        const view = { x: containerRef.value.clientWidth, y: containerRef.value.clientHeight };
         const edgethres = { x: view.x * edgePanWidthRatio, y: view.y * edgePanWidthRatio };
         const fac = camera.z * panSensitivityKeyboard;
         const facmouse = camera.z * panSensitivityMouse;
-        const mx = cursorScreenPos.x;
-        const my = cursorScreenPos.y;
+        const mx = cursorScreenPos.x, my = cursorScreenPos.y;
         if (mx >= 0 && mx <= view.x && my >= 0 && my <= view.y && isCursorInScreen) {
             if (mx < edgethres.x) velocity.x += -facmouse * (1 - mx / edgethres.x);
             else if (mx > view.x - edgethres.x) velocity.x += facmouse * (1 - (view.x - mx) / edgethres.x);
-            if (my < edgethres.y) velocity.y += -facmouse * (1 - my / edgethres.y);
-            else if (my > view.y - edgethres.y) velocity.y += facmouse * (1 - (view.y - my) / edgethres.y);
+            if (my < edgethres.y) velocity.y += facmouse * (1 - my / edgethres.y);
+            else if (my > view.y - edgethres.y) velocity.y += -facmouse * (1 - (view.y - my) / edgethres.y);
         }
-        if (arrowKeys.left) velocity.x -= fac;
-        if (arrowKeys.right) velocity.x += fac;
-        if (arrowKeys.up) velocity.y -= fac;
-        if (arrowKeys.down) velocity.y += fac;
+        if (arrowKeys.left) velocity.x -= fac; if (arrowKeys.right) velocity.x += fac;
+        if (arrowKeys.up) velocity.y -= fac; if (arrowKeys.down) velocity.y += fac;
         if (arrowKeys.pageUp) velocity.z -= camera.z * zoomSensitivityKeyboard;
         if (arrowKeys.pageDown) velocity.z += camera.z * zoomSensitivityKeyboard;
 
-        const newpos = {
-            x: camera.x + velocity.x,
-            y: camera.y + velocity.y,
-            z: camera.z + velocity.z
-        };
-        //wrap x coord for seamless scrolling
-        if (newpos.x > mapWidth / 2.0) newpos.x -= mapWidth;
-        else if (newpos.x < -mapWidth / 2.0) newpos.x += mapWidth;
-        //clamp y and z
+        const newpos = { x: camera.x + velocity.x, y: camera.y + velocity.y, z: camera.z + velocity.z };
+        if (newpos.x > MAP_WIDTH / 2.0) newpos.x -= MAP_WIDTH;
+        else if (newpos.x < -MAP_WIDTH / 2.0) newpos.x += MAP_WIDTH;
         newpos.y = Math.max(yRange.value.min, Math.min(newpos.y, yRange.value.max));
         newpos.z = Math.max(zMin, Math.min(newpos.z, zMax.value));
 
-        camera.x = newpos.x;
-        camera.y = newpos.y;
-        camera.z = newpos.z;
-        //vel decay exponentially
+        camera.x = newpos.x; camera.y = newpos.y; camera.z = newpos.z;
+
         if (Math.abs(velocity.x) > 0.01) velocity.x *= lerpAcceleration; else velocity.x = 0;
         if (Math.abs(velocity.y) > 0.01) velocity.y *= lerpAcceleration; else velocity.y = 0;
         if (Math.abs(velocity.z) > 0.01) velocity.z *= lerpAcceleration; else velocity.z = 0;
 
+        const canvas = canvasRef.value;
+        if (canvas.width !== view.x || canvas.height !== view.y) {
+            canvas.width = view.x; canvas.height = view.y;
+        }
+        renderer.render(camera, canvas.width, canvas.height);
         animationFrame = requestAnimationFrame(animate);
     }
     animate();
 }
 
-function updateProvinceFills() {
-    getProvinceElements().forEach(path => {
-        const provId = path.id;
-        let ownerColor = '#cccccc';
-        for (const countryId in store.countries) {
-            if (store.countries[countryId].provinces.includes(provId)) {
-                ownerColor = store.countries[countryId].color;
-                break;
-            }
-        }
-        path.setAttribute('fill', ownerColor);
-    });
+// --- Data Update & Debug Functions ---
+
+function hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null;
 }
 
-function updateHighlights() {
-    getProvinceElements().forEach(path => {
-        if (store.highlightedProvinces.has(path.id)) {
-            path.style.animation = 'blink-gold 1s infinite';
-        } else {
-            path.style.animation = 'none';
-        }
-    });
-}
+// --- Lifecycle Hooks ---
 
-//lifecycle
 onMounted(async () => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-
-    const response = await fetch(`/maps/${store.mapType}.svg`);
-    const svgText = await response.text();
-    mapSVG.value = svgText;
-    await nextTick();
-    //init cam pos
-    camera.x = 0;
-    camera.y = mapHeight / 2;
-    camera.z = 500;
-
-    updateProvinceFills();
-    startAnimationLoop();
+    try {
+        const provDefs = await fetch(`/vanilla/provinces.json`).then(res => res.json());
+        provinceDefinitions.value = provDefs;
+        const { renderer: rend, originalPaletteData } = await initRenderer(canvasRef.value, `/vanilla/provinces.png`, MAP_WIDTH, MAP_HEIGHT, provDefs, `/vanilla/states.json`);
+        renderer = rend;
+        originalPalette.value = originalPaletteData;
+        currentPalette.value = renderer.getPaletteData();
+        camera.x = 0;
+        camera.y = MAP_HEIGHT / 2;
+        camera.z = 500;
+        startAnimationLoop();
+    } catch (error) {
+        console.error("Failed to initialize map renderer:", error);
+    }
 });
 
 onUnmounted(() => {
@@ -362,9 +262,44 @@ onUnmounted(() => {
     if (animationFrame) cancelAnimationFrame(animationFrame);
 });
 
-//watchers(??)
-watch(() => store.countries, updateProvinceFills, { deep: true });
-watch(() => store.highlightedProvinces, updateHighlights, { deep: true });
+watch(() => store.showDebugInfo, (isShown) => {
+    if (isShown && renderer) {
+        currentPalette.value = renderer.getPaletteData();
+    }
+});
+
+watch(() => store.countries, () => {
+    if (!renderer || !provinceDefinitions.value.length) return;
+
+    const provinceToOwner = new Map();
+    for (const [countryId, countryData] of Object.entries(store.countries)) {
+        for (const provinceId of countryData.provinces) {
+            provinceToOwner.set(provinceId, countryId);
+        }
+    }
+
+    for (const province of provinceDefinitions.value) {
+        const ownerId = provinceToOwner.get(province.id);
+        if (ownerId) {
+            const colorHex = store.countries[ownerId].color;
+            const colorRgb = hexToRgb(colorHex);
+            if (colorRgb) {
+                renderer.setProvinceColor(province.id, colorRgb.r, colorRgb.g, colorRgb.b, 255);
+            }
+        } else {
+            // Fallback for unowned provinces
+            if (province.type === 'sea' || province.type === 'lake') {
+                renderer.setProvinceColor(province.id, 0, 0, 0, 0); // Transparent
+            } else { // land or lake
+                renderer.setProvinceColor(province.id, 0x33, 0x33, 0x33, 255); // #333333
+            }
+        }
+    }
+
+    if (store.showDebugInfo) {
+        currentPalette.value = renderer.getPaletteData();
+    }
+}, { deep: true });
 </script>
 
 <style scoped>
@@ -376,26 +311,9 @@ watch(() => store.highlightedProvinces, updateHighlights, { deep: true });
     background: radial-gradient(circle, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 6%, rgb(0, 43, 78) 10%, rgb(0, 3, 41) 100%);
 }
 
-.map-svg {
+.map-canvas {
     width: 100%;
     height: 100%;
-}
-
-.debug-overlay {
-    position: absolute;
-    top: 50%;
-    left: 8px;
-    transform: translateY(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
-    font-size: 13px;
-    padding: 8px 12px;
-    border-radius: 8px;
-    z-index: 20;
-    pointer-events: none;
-    user-select: text;
-    font-family: monospace;
-    min-width: 220px;
 }
 
 @keyframes blink-gold {

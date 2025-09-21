@@ -169,7 +169,6 @@ function startWithHistory() {
     left: 0;
     right: 0;
     bottom: 0;
-    background: url('/maps/vanilla.svg') center/cover no-repeat;
     opacity: 0.1;
     z-index: 0;
 }

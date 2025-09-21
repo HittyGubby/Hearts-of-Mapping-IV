@@ -1,4 +1,4 @@
-import { reactive, watch } from "vue";
+import { reactive } from "vue";
 import { documentDir } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 
@@ -40,8 +40,9 @@ export const store = reactive({
 
   // Selection State
   selectedCountryId: undefined,
-  highlightedProvinces: new Set(),
   clickedProvinceId: undefined,
+  clickedProvinceType: undefined, // 'land', 'sea', 'lake'
+  clickedProvinceColor: undefined, // hex color string
 
   // --- ACTIONS ---
 
@@ -61,21 +62,6 @@ export const store = reactive({
     return null;
   },
 
-  setHighlightByCountry(cid) {
-    this.highlightedProvinces.clear();
-    if (!cid) return;
-    for (const prov of this.countries[cid]?.provinces || []) {
-      this.highlightedProvinces.add(prov);
-    }
-    for (const [otherId, country] of Object.entries(this.countries)) {
-      if (otherId !== cid && this.factionsAreAllied(cid, otherId)) {
-        for (const prov of country.provinces) {
-          this.highlightedProvinces.add(prov); // green
-        }
-      }
-    }
-  },
-
   assignProvince(provinceId, countryId) {
     //remove from old owner
     for (const id in this.countries) {
@@ -90,12 +76,7 @@ export const store = reactive({
     if (countryId && this.countries[countryId]) {
       console.log(provinceId, countryId);
       this.countries[countryId].provinces.push(provinceId);
-      this.highlightedProvinces.add(provinceId);
     }
-  },
-
-  clearHighlight() {
-    this.highlightedProvinces.clear();
   },
 
   async saveState(fileName) {
